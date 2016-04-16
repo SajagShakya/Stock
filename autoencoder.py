@@ -43,7 +43,7 @@ def load_data():
 
     return X_train,Y_train,X_test,Y_test
 
-def demo():
+def MLP():
     ##########################
     # dense model test       #
     ##########################
@@ -82,36 +82,43 @@ def build_lstm_autoencoder(autoencoder, X_train, X_test):
     return autoencoder, X_train, X_test
 
 
-def build_deep_classical_autoencoder(X_train):
-    encoder = containers.Sequential([Dense(output_dim=200, input_dim=28*28,activation=activation)])
-    decoder = containers.Sequential([Dense(output_dim=28*28,input_dim=200,activation=activation)])
-    autoencoder = Sequential()
-    autoencoder.add(AutoEncoder(encoder=encoder,decoder=decoder,output_reconstruction=True))
-    autoencoder.compile(loss='mean_squared_error', optimizer='sgd')
-    autoencoder.fit(X=X_train, y=X_train, batch_size=batch_size, nb_epoch=nb_epoch, show_accuracy=False, verbose=1)
+def build_deep_classical_autoencoder():
+    encoder = containers.Sequential([Dense(output_dim=hidden_dim, input_dim=input_dim,activation=activation),
+                                     Dense(output_dim=hidden_dim/2,input_dim=hidden_dim,activation=activation)])
+    decoder = containers.Sequential([Dense(output_dim=hidden_dim,input_dim=hidden_dim/2,activation=activation),
+                                     Dense(output_dim=input_dim,input_dim=hidden_dim,activation=activation)])
+
+    autoencoder=AutoEncoder(encoder=encoder,decoder=decoder,output_reconstruction=True)
     return autoencoder
 
 # Try different things here: 'lstm' or 'classical' or 'denoising'
 # or 'deep_denoising'
 
-def train(autoencoder_type='classical'): #'classical', 'lstm'
+def train(autoencoder_type="classical"): #'classical', 'lstm'
     X_train,Y_train,X_test,Y_test=load_data()
     print(autoencoder_type)
     print('-'*40)
     # Build our autoencoder model
+    model= Sequential()
 
     if autoencoder_type == 'lstm':
         print("Training LSTM AutoEncoder")
-        autoencoder, X_train, X_test = build_lstm_autoencoder( X_train, X_test)
+        autoencoder, X_train, X_test = build_lstm_autoencoder(X_train, X_test)
     elif autoencoder_type == 'classical':
         print("Training Classical AutoEncoder")
-        autoencoder = build_deep_classical_autoencoder(X_train)
+        autoencoder= build_deep_classical_autoencoder()
+        model.add(autoencoder)
+        model.compile(loss='mean_squared_error', optimizer='sgd')
+        model.fit(X=X_train, y=X_train, batch_size=batch_size, nb_epoch=nb_epoch, show_accuracy=False, verbose=1)
 
 
     print('validing....')
     # Do an inference pass
-    prefilter_train = autoencoder.predict(X_train, verbose=0)
-    prefilter_test = autoencoder.predict(X_test, verbose=0)
+
+    autoencoder.output_reconstruction = False
+    model.compile(loss='mean_squared_error', optimizer='sgd')
+    prefilter_train = model.predict(X_train)
+    prefilter_test = model.predict(X_test)
     print("prefilter_train: ", prefilter_train.shape)
     print("prefilter_test: ", prefilter_test.shape)
 
@@ -122,25 +129,20 @@ def train(autoencoder_type='classical'): #'classical', 'lstm'
         model.add(TimeDistributedDense(8, nb_classes, activation=activation))
         model.add(Flatten())
     elif autoencoder_type == 'classical':
-        model.add(Dense(prefilter_train.shape[1], nb_classes, activation=activation))
+        model.add(Dense(input_dim=prefilter_train.shape[1], output_dim=nb_classes, activation=activation))
     else:
         model.add(Dense(prefilter_train.shape[1], nb_classes, activation=activation))
 
     model.add(Activation('softmax'))
 
-    model.get_config(verbose=1)
+    #model.get_config(verbose=1)
     model.compile(loss='categorical_crossentropy', optimizer='adam')
     model.fit(prefilter_train, Y_train, validation_data=(prefilter_test, Y_test), batch_size=batch_size, nb_epoch=nb_epoch, show_accuracy=False, verbose=0)
 
     score = model.evaluate(prefilter_test, Y_test, verbose=0, show_accuracy=True)
     print('\nscore:', score)
 
-    #print('Loss change:', (score[0] - classical_score[0])/classical_score[0], '%')
-    #print('Accuracy change:', (score[1] - classical_score[1])/classical_score[1], '%')
 
-    # check serialization
-    #config = autoencoder.get_config(verbose=1)
-    #autoencoder = model_from_config(config)
 
 if __name__=="__main__":
     train()
